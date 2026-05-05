@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  SPRING_PROFILES_ACTIVE: {{ .Values.global.springProfile }}
+  # Service Discovery URLs
+  AUTH_SERVICE_URI: "http://{{ .Release.Name }}-auth-service:{{ .Values.authService.port }}"
+  USER_SERVICE_URI: "http://{{ .Release.Name }}-user-service:{{ .Values.userService.port }}"
+  ORDER_SERVICE_URI: "http://{{ .Release.Name }}-order-service:{{ .Values.orderService.port }}"
+  PAYMENT_SERVICE_URI: "http://{{ .Release.Name }}-payment-service:{{ .Values.paymentService.port }}"
+  # Infrastructure URLs
+  KAFKA_BOOTSTRAP_SERVERS: "{{ .Release.Name }}-kafka:{{ .Values.kafka.internalPort }}"
+  REDIS_HOST: "{{ .Release.Name }}-redis"
+  REDIS_PORT: "{{ .Values.redis.port }}"
+  MONGO_HOST: "{{ .Release.Name }}-mongo"
+  MONGO_PORT: "{{ .Values.mongo.port }}"
