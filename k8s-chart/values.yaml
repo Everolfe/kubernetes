@@ -1,0 +1,89 @@
+global:
+  rollbackKey: "my-super-secret-internal-key-12345"
+  springProfile: "docker"
+
+postgresql:
+  image: postgres:15-alpine
+  port: 5432
+  auth:
+    dbName: auth_db
+    user: auth_user
+    password: auth_pass
+    storage: 1Gi
+  user:
+    dbName: user_db
+    user: user_user
+    password: user_pass
+    storage: 1Gi
+  order:
+    dbName: order_db
+    user: order_user
+    password: order_pass
+    storage: 1Gi
+
+redis:
+  image: redis:7.2-alpine
+  port: 6379
+  authStorage: 1Gi
+  userStorage: 1Gi
+
+mongo:
+  image: mongo:6.0
+  port: 27017
+  dbName: payment_db
+  rootUser: admin
+  rootPassword: password
+  storage: 1Gi
+
+zookeeper:
+  image: confluentinc/cp-zookeeper:7.5.0
+  port: 2181
+  tickTime: 2000
+  storage: 1Gi
+
+kafka:
+  image: confluentinc/cp-kafka:7.5.0
+  port: 9092
+  internalPort: 29092
+  brokerId: 1
+
+appConfig:
+  imagePullPolicy: Never
+  livenessPath: /actuator/health
+  readinessPath: /actuator/health
+  initialDelaySeconds: 40
+
+authService:
+  image: authservice-app:latest
+  port: 8082
+  replicaCount: 1
+
+userService:
+  image: userservice-app:latest
+  port: 8081
+  replicaCount: 1
+
+orderService:
+  image: orderservice-app:latest
+  port: 8083
+  replicaCount: 1
+  groupId: order-service-group
+  producerTopic: create-order
+  consumerTopic: create-payment
+
+paymentService:
+  image: paymentservice-app:latest
+  port: 8085
+  replicaCount: 1
+  groupId: payment-service-group
+  producerTopic: create-payment
+  consumerTopic: create-order
+  randomUri: "https://www.random.org/integers/?num=1&min=1&max=100&col=1&base=10&format=plain&rnd=new"
+
+apiGateway:
+  image: apigateway-app:latest
+  port: 8084
+  replicaCount: 1
+  ingress:
+    enabled: true
+    host: api.minikube.local

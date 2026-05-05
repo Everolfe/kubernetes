@@ -1,0 +1,382 @@
+# --- Auth Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-auth-service
+spec:
+  replicas: {{ .Values.authService.replicaCount }}
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth-service
+          image: {{ .Values.authService.image }}
+          imagePullPolicy: {{ .Values.appConfig.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.authService.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-secrets
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "{{ .Values.global.springProfile }}"
+            - name: APP_PORT
+              value: "{{ .Values.authService.port }}"
+            - name: D_USER_URL
+              value: "http://{{ .Release.Name }}-user-service:{{ .Values.userService.port }}"
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://{{ .Release.Name }}-postgres-auth:5432/{{ .Values.postgresql.auth.dbName }}"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: {{ .Values.postgresql.auth.user }}
+            - name: REDIS_HOST
+              value: "{{ .Release.Name }}-auth-redis"
+            - name: REDIS_PORT
+              value: "{{ .Values.redis.port }}"
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: AUTH_DB_PASSWORD
+            - name: USER_APP_PORT
+              value: "{{ .Values.userService.port }}"
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.livenessPath }}
+              port: {{ .Values.authService.port }}
+            initialDelaySeconds: {{ .Values.appConfig.initialDelaySeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.readinessPath }}
+              port: {{ .Values.authService.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-auth-service
+spec:
+  selector:
+    app: auth-service
+  ports:
+    - port: {{ .Values.authService.port }}
+
+---
+# --- User Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-user-service
+spec:
+  replicas: {{ .Values.userService.replicaCount }}
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+        - name: user-service
+          image: {{ .Values.userService.image }}
+          imagePullPolicy: {{ .Values.appConfig.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.userService.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+            - secretRef:
+                name: {{ .Release.Name }}-secrets
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "{{ .Values.global.springProfile }}"
+            - name: APP_PORT
+              value: "{{ .Values.userService.port }}"
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI
+              value: "http://{{ .Release.Name }}-auth-service:{{ .Values.authService.port }}/api/auth/.well-known/jwks.json"
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://{{ .Release.Name }}-postgres-user:5432/{{ .Values.postgresql.user.dbName }}"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: {{ .Values.postgresql.user.user }}
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: USER_DB_PASSWORD
+            - name: AUTH_APP_PORT
+              value: "{{ .Values.authService.port }}"
+            - name: REDIS_HOST
+              value: "{{ .Release.Name }}-user-redis"
+            - name: REDIS_PORT
+              value: "{{ .Values.redis.port }}"
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.livenessPath }}
+              port: {{ .Values.userService.port }}
+            initialDelaySeconds: {{ .Values.appConfig.initialDelaySeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.readinessPath }}
+              port: {{ .Values.userService.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-user-service
+spec:
+  selector:
+    app: user-service
+  ports:
+    - port: {{ .Values.userService.port }}
+
+---
+# --- Order Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-order-service
+spec:
+  replicas: {{ .Values.orderService.replicaCount }}
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      containers:
+        - name: order-service
+          image: {{ .Values.orderService.image }}
+          imagePullPolicy: {{ .Values.appConfig.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.orderService.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-secrets
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "{{ .Values.global.springProfile }}"
+            - name: APP_PORT
+              value: "{{ .Values.orderService.port }}"
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI
+              value: "http://{{ .Release.Name }}-auth-service:{{ .Values.authService.port }}/api/auth/.well-known/jwks.json"
+            - name: USER_SERVICE_URL
+              value: "http://{{ .Release.Name }}-user-service:{{ .Values.userService.port }}"
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://{{ .Release.Name }}-postgres-order:5432/{{ .Values.postgresql.order.dbName }}"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: {{ .Values.postgresql.order.user }}
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: ORDER_DB_PASSWORD
+            - name: BOOTSTRAP_SERVER
+              value: "{{ .Release.Name }}-kafka:{{ .Values.kafka.internalPort }}"
+            - name: ORDER_PRODUCER_TOPIC
+              value: "{{ .Values.orderService.producerTopic }}"
+            - name: ORDER_CONSUMER_TOPIC # ADDED MISSING VAR
+              value: "{{ .Values.orderService.consumerTopic }}"
+            - name: GROUP_ID
+              value: "{{ .Values.orderService.groupId }}"
+            - name: AUTH_APP_PORT
+              value: "{{ .Values.authService.port }}"
+            - name: USER_APP_PORT
+              value: "{{ .Values.userService.port }}"
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.livenessPath }}
+              port: {{ .Values.orderService.port }}
+            initialDelaySeconds: {{ .Values.appConfig.initialDelaySeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.readinessPath }}
+              port: {{ .Values.orderService.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-order-service
+spec:
+  selector:
+    app: order-service
+  ports:
+    - port: {{ .Values.orderService.port }}
+
+---
+# --- Payment Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-payment-service
+spec:
+  replicas: {{ .Values.paymentService.replicaCount }}
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: {{ .Values.paymentService.image }}
+          imagePullPolicy: {{ .Values.appConfig.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.paymentService.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+            - secretRef:
+                name: {{ .Release.Name }}-secrets
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "{{ .Values.global.springProfile }}"
+            - name: APP_PORT
+              value: "{{ .Values.paymentService.port }}"
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI
+              value: "http://{{ .Release.Name }}-auth-service:{{ .Values.authService.port }}/api/auth/.well-known/jwks.json"
+            - name: MONGO_HOST
+              value: "{{ .Release.Name }}-mongo"
+            - name: MONGO_PORT
+              value: "{{ .Values.mongo.port }}"
+            - name: DB_NAME
+              value: {{ .Values.mongo.dbName }}
+            - name: ROOT_USERNAME
+              value: {{ .Values.mongo.rootUser }}
+            - name: ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: MONGO_ROOT_PASSWORD
+            - name: MONGO_DB_URI
+              value: "mongodb://{{ .Values.mongo.rootUser }}:{{ .Values.mongo.rootPassword }}@{{ .Release.Name }}-mongo:{{ .Values.mongo.port }}/{{ .Values.mongo.dbName }}?authSource=admin"
+            - name: BOOTSTRAP_SERVER
+              value: "{{ .Release.Name }}-kafka:{{ .Values.kafka.internalPort }}"
+            - name: PRODUCER_TOPIC
+              value: "{{ .Values.paymentService.producerTopic }}"
+            - name: GROUP_ID
+              value: "{{ .Values.paymentService.groupId }}"
+            - name: RANDOM_API
+              value: "{{ .Values.paymentService.randomUri }}"
+            - name: AUTH_APP_PORT
+              value: "{{ .Values.authService.port }}"
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.livenessPath }}
+              port: {{ .Values.paymentService.port }}
+            initialDelaySeconds: {{ .Values.appConfig.initialDelaySeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.readinessPath }}
+              port: {{ .Values.paymentService.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-payment-service
+spec:
+  selector:
+    app: payment-service
+  ports:
+    - port: {{ .Values.paymentService.port }}
+
+---
+# --- API Gateway ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api-gateway
+spec:
+  replicas: {{ .Values.apiGateway.replicaCount }}
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: {{ .Values.apiGateway.image }}
+          imagePullPolicy: {{ .Values.appConfig.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.apiGateway.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-secrets
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "{{ .Values.global.springProfile }}"
+            - name: GATEWAY_APP_PORT
+              value: "{{ .Values.apiGateway.port }}"
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI
+              value: "http://{{ .Release.Name }}-auth-service:{{ .Values.authService.port }}/api/auth/.well-known/jwks.json"
+            - name: AUTH_SERVICE_URL
+              value: "http://{{ .Release.Name }}-auth-service:{{ .Values.authService.port }}"
+            - name: USER_SERVICE_URL
+              value: "http://{{ .Release.Name }}-user-service:{{ .Values.userService.port }}"
+
+            # --- ROUTE 0: Auth Service ---
+            - name: SPRING_CLOUD_GATEWAY_ROUTES_0_URI
+              value: "http://{{ .Release.Name }}-auth-service:{{ .Values.authService.port }}"
+            - name: SPRING_CLOUD_GATEWAY_ROUTES_0_PREDICATES_0
+              value: "Path=/api/auth/**"
+
+            # --- ROUTE 1: User Service ---
+            - name: SPRING_CLOUD_GATEWAY_ROUTES_1_URI
+              value: "http://{{ .Release.Name }}-user-service:{{ .Values.userService.port }}"
+            - name: SPRING_CLOUD_GATEWAY_ROUTES_1_PREDICATES_0
+              value: "Path=/api/users/**,/api/cards/**"
+
+            # --- ROUTE 2: Order Service ---
+            - name: SPRING_CLOUD_GATEWAY_ROUTES_2_URI
+              value: "http://{{ .Release.Name }}-order-service:{{ .Values.orderService.port }}"
+            - name: SPRING_CLOUD_GATEWAY_ROUTES_2_PREDICATES_0
+              value: "Path=/api/orders/**,/api/items/**"
+
+            # --- ROUTE 3: Payment Service ---
+            - name: SPRING_CLOUD_GATEWAY_ROUTES_3_URI
+              value: "http://{{ .Release.Name }}-payment-service:{{ .Values.paymentService.port }}"
+            - name: SPRING_CLOUD_GATEWAY_ROUTES_3_PREDICATES_0
+              value: "Path=/api/payments/**"
+            - name: APP_PORT
+              value: "{{ .Values.apiGateway.port }}"
+            - name: AUTH_APP_PORT
+              value: "{{ .Values.authService.port }}"
+            - name: USER_APP_PORT
+              value: "{{ .Values.userService.port }}"
+            - name: ORDER_APP_PORT
+              value: "{{ .Values.orderService.port }}"
+            - name: PAYMENT_APP_PORT
+              value: "{{ .Values.paymentService.port }}"
+            - name: SPRING_CLOUD_GATEWAY_DISCOVERY_LOCATOR_ENABLED
+              value: "true"
+            - name: SPRING_CLOUD_GATEWAY_DISCOVERY_LOCATOR_LOWER_CASE_SERVICE_ID
+              value: "true"
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.livenessPath }}
+              port: {{ .Values.apiGateway.port }}
+            initialDelaySeconds: {{ .Values.appConfig.initialDelaySeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.appConfig.readinessPath }}
+              port: {{ .Values.apiGateway.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api-gateway
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - port: {{ .Values.apiGateway.port }}
